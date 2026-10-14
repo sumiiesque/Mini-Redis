@@ -31,4 +31,14 @@ size_t LockingBackend::StripeIndexFor(const std::string& key) {
   return static_cast<size_t>(Fnv1a64(key) & (kNumStripes - 1));
 }
 
+bool LockingBackend::IsExpired(const Entry& e, int64_t now_ms) {
+  return e.expire_at_ms >= 0 && e.expire_at_ms <= now_ms;
+}
+
+int64_t LockingBackend::NowMs() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
 }
