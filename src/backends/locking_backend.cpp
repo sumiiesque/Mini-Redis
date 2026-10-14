@@ -65,4 +65,14 @@ KVResult LockingBackend::Get(const std::string& key) {
   return r;
 }
 
+KVResult LockingBackend::Del(const std::string& key) {
+  Stripe& s = *stripes_[StripeIndexFor(key)];
+  ::pthread_rwlock_wrlock(&s.lock);
+  auto it = s.map.find(key);
+  bool present = it != s.map.end() && !IsExpired(it->second, NowMs());
+  if (it != s.map.end()) s.map.erase(it);
+  ::pthread_rwlock_unlock(&s.lock);
+  return KVResult::Status(present ? KVStatus::kDelOk : KVStatus::kDelNotFound);
+}
+
 }
