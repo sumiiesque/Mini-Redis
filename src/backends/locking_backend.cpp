@@ -19,4 +19,11 @@ uint64_t Fnv1a64(const std::string& key) {
 LockingBackend::Stripe::Stripe() { ::pthread_rwlock_init(&lock, nullptr); }
 LockingBackend::Stripe::~Stripe() { ::pthread_rwlock_destroy(&lock); }
 
+LockingBackend::LockingBackend() {
+  stripes_.reserve(kNumStripes);
+  for (size_t i = 0; i < kNumStripes; ++i) stripes_.push_back(std::make_unique<Stripe>());
+}
+
+LockingBackend::~LockingBackend() = default;
+
 }
