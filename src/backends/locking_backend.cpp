@@ -15,4 +15,8 @@ uint64_t Fnv1a64(const std::string& key) {
 }
 
 }
+
+LockingBackend::Stripe::Stripe() { ::pthread_rwlock_init(&lock, nullptr); }
+LockingBackend::Stripe::~Stripe() { ::pthread_rwlock_destroy(&lock); }
+
 }
