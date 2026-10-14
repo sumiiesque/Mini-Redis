@@ -42,6 +42,12 @@ class LockingBackend : public KVBackend {
     pthread_rwlock_t lock;
     std::unordered_map<std::string, Entry> map;
   };
+
+  static size_t StripeIndexFor(const std::string& key);
+  static bool IsExpired(const Entry& e, int64_t now_ms);
+  static int64_t NowMs();
+
+  std::vector<std::unique_ptr<Stripe>> stripes_;
 };
 
 }
