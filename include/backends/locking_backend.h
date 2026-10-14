@@ -13,4 +13,12 @@ namespace backends {
 
 constexpr size_t kNumStripes = 16384;
 
+class LockingBackend : public KVBackend {
+ private:
+  struct Entry {
+    std::string value;
+    int64_t expire_at_ms = -1;
+  };
+};
+
 }
