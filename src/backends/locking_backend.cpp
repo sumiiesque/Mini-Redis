@@ -26,4 +26,9 @@ LockingBackend::LockingBackend() {
 
 LockingBackend::~LockingBackend() = default;
 
+size_t LockingBackend::StripeIndexFor(const std::string& key) {
+  static_assert((kNumStripes & (kNumStripes - 1)) == 0, "kNumStripes must be a power of two");
+  return static_cast<size_t>(Fnv1a64(key) & (kNumStripes - 1));
+}
+
 }
