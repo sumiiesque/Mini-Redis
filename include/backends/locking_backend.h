@@ -14,6 +14,19 @@ namespace backends {
 constexpr size_t kNumStripes = 16384;
 
 class LockingBackend : public KVBackend {
+ public:
+  LockingBackend();
+  ~LockingBackend() override;
+
+  LockingBackend(const LockingBackend&) = delete;
+  LockingBackend& operator=(const LockingBackend&) = delete;
+
+  KVResult Set(const std::string& key, const std::string& value,
+               int64_t expire_ms = -1) override;
+  KVResult Get(const std::string& key) override;
+  KVResult Del(const std::string& key) override;
+  KVResult Expire(const std::string& key, int64_t ttl_ms) override;
+
  private:
   struct Entry {
     std::string value;
