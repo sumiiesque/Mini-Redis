@@ -15,6 +15,7 @@ add_library(mini_redis_core INTERFACE)
 target_include_directories(mini_redis_core INTERFACE ${CMAKE_SOURCE_DIR}/include)
 
 find_package(Threads REQUIRED)
+add_subdirectory(src)
 
 enable_testing()
 add_subdirectory(tests)
