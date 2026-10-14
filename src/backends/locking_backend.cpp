@@ -52,4 +52,17 @@ KVResult LockingBackend::Set(const std::string& key, const std::string& value,
   return KVResult::Status(KVStatus::kSetOk);
 }
 
+KVResult LockingBackend::Get(const std::string& key) {
+  Stripe& s = *stripes_[StripeIndexFor(key)];
+  ::pthread_rwlock_rdlock(&s.lock);
+  auto it = s.map.find(key);
+  if (it == s.map.end() || IsExpired(it->second, NowMs())) {
+    ::pthread_rwlock_unlock(&s.lock);
+    return KVResult::Status(KVStatus::kGetNotFound);
+  }
+  KVResult r = KVResult::GetFound(it->second.value);
+  ::pthread_rwlock_unlock(&s.lock);
+  return r;
+}
+
 }
