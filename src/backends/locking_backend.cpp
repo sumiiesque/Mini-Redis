@@ -41,4 +41,15 @@ int64_t LockingBackend::NowMs() {
       .count();
 }
 
+KVResult LockingBackend::Set(const std::string& key, const std::string& value,
+                              int64_t expire_ms) {
+  Stripe& s = *stripes_[StripeIndexFor(key)];
+  ::pthread_rwlock_wrlock(&s.lock);
+  Entry& e = s.map[key];
+  e.value = value;
+  e.expire_at_ms = expire_ms < 0 ? -1 : NowMs() + expire_ms;
+  ::pthread_rwlock_unlock(&s.lock);
+  return KVResult::Status(KVStatus::kSetOk);
+}
+
 }
