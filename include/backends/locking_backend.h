@@ -19,6 +19,16 @@ class LockingBackend : public KVBackend {
     std::string value;
     int64_t expire_at_ms = -1;
   };
+
+  struct Stripe {
+    Stripe();
+    ~Stripe();
+    Stripe(const Stripe&) = delete;
+    Stripe& operator=(const Stripe&) = delete;
+
+    pthread_rwlock_t lock;
+    std::unordered_map<std::string, Entry> map;
+  };
 };
 
 }
