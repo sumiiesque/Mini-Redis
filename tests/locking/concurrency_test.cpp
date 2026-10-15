@@ -53,3 +53,30 @@ void TestConcurrentSetGetDelSameKey() {
 
   CHECK(!saw_corruption.load());
 }
+
+void TestConcurrentDifferentStripes() {
+  LockingBackend db;
+  constexpr int kThreads = 8;
+  constexpr int kKeysPerThread = 500;
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < kThreads; ++t) {
+    threads.emplace_back([&, t] {
+      for (int i = 0; i < kKeysPerThread; ++i) {
+        std::string key = "t" + std::to_string(t) + "-k" + std::to_string(i);
+        db.Set(key, key);
+      }
+    });
+  }
+  for (auto& th : threads) th.join();
+
+  bool all_found = true;
+  for (int t = 0; t < kThreads; ++t) {
+    for (int i = 0; i < kKeysPerThread; ++i) {
+      std::string key = "t" + std::to_string(t) + "-k" + std::to_string(i);
+      KVResult r = db.Get(key);
+      if (r.status != KVStatus::kGetFound || r.value != key) all_found = false;
+    }
+  }
+  CHECK(all_found);
+}
