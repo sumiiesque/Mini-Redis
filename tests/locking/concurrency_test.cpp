@@ -115,3 +115,48 @@ void TestExpireRacingWithGetSet() {
 
   CHECK(crashes.load() == 0);
 }
+
+void TestRandomizedStress() {
+  LockingBackend db;
+  constexpr int kThreads = 8;
+  constexpr int kOpsPerThread = 5000;
+  constexpr int kKeyspace = 64;
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < kThreads; ++t) {
+    threads.emplace_back([&, t] {
+      std::mt19937 rng(static_cast<unsigned>(t) * 7919u + 1);
+      std::uniform_int_distribution<int> key_dist(0, kKeyspace - 1);
+      std::uniform_int_distribution<int> op_dist(0, 3);
+      for (int i = 0; i < kOpsPerThread; ++i) {
+        std::string key = "rand-" + std::to_string(key_dist(rng));
+        switch (op_dist(rng)) {
+          case 0:
+            db.Set(key, "v");
+            break;
+          case 1:
+            db.Get(key);
+            break;
+          case 2:
+            db.Del(key);
+            break;
+          default:
+            db.Expire(key, 5);
+            break;
+        }
+      }
+    });
+  }
+  for (auto& th : threads) th.join();
+  CHECK(true);
+}
+
+int main() {
+  TestConcurrentSetGetDelSameKey();
+  TestConcurrentDifferentStripes();
+  TestExpireRacingWithGetSet();
+  TestRandomizedStress();
+
+  std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);
+  return g_failures == 0 ? 0 : 1;
+}
