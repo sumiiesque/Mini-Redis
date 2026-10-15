@@ -73,3 +73,21 @@ void TestSetClearsPriorTtl() {
   auto r = db.Get("k");
   CHECK(r.status == KVStatus::kGetFound && r.value == "v2");
 }
+
+void TestExpireOnExistingKey() {
+  LockingBackend db;
+  db.Set("k", "v");
+  CHECK(db.Expire("k", 60).status == KVStatus::kExpireOk);
+  CHECK(db.Get("k").status == KVStatus::kGetFound);
+  SleepMs(150);
+  CHECK(db.Get("k").status == KVStatus::kGetNotFound);
+}
+
+void TestExpireOnMissingOrExpiredKey() {
+  LockingBackend db;
+  CHECK(db.Expire("missing", 100).status == KVStatus::kExpireNotFound);
+
+  db.Set("k", "v", 30);
+  SleepMs(100);
+  CHECK(db.Expire("k", 100).status == KVStatus::kExpireNotFound);
+}
