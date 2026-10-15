@@ -91,3 +91,29 @@ void TestExpireOnMissingOrExpiredKey() {
   SleepMs(100);
   CHECK(db.Expire("k", 100).status == KVStatus::kExpireNotFound);
 }
+
+void TestDifferentStripes() {
+  LockingBackend db;
+  for (int i = 0; i < 200; ++i) {
+    db.Set("stripe-key-" + std::to_string(i), std::to_string(i));
+  }
+  for (int i = 0; i < 200; ++i) {
+    auto r = db.Get("stripe-key-" + std::to_string(i));
+    CHECK(r.status == KVStatus::kGetFound && r.value == std::to_string(i));
+  }
+}
+
+int main() {
+  TestSetGetOverwrite();
+  TestEmptyKeyAndValue();
+  TestDel();
+  TestRepeatedOperations();
+  TestSetWithTtlExpires();
+  TestSetClearsPriorTtl();
+  TestExpireOnExistingKey();
+  TestExpireOnMissingOrExpiredKey();
+  TestDifferentStripes();
+
+  std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);
+  return g_failures == 0 ? 0 : 1;
+}
