@@ -56,3 +56,20 @@ void TestRepeatedOperations() {
   CHECK(db.Del("k").status == KVStatus::kDelOk);
   for (int i = 0; i < 3; ++i) CHECK(db.Del("k").status == KVStatus::kDelNotFound);
 }
+
+void TestSetWithTtlExpires() {
+  LockingBackend db;
+  db.Set("k", "v", 60);
+  CHECK(db.Get("k").status == KVStatus::kGetFound);
+  SleepMs(150);
+  CHECK(db.Get("k").status == KVStatus::kGetNotFound);
+}
+
+void TestSetClearsPriorTtl() {
+  LockingBackend db;
+  db.Set("k", "v", 60);
+  db.Set("k", "v2");
+  SleepMs(150);
+  auto r = db.Get("k");
+  CHECK(r.status == KVStatus::kGetFound && r.value == "v2");
+}
