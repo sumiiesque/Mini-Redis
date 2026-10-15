@@ -38,3 +38,13 @@ void TestEmptyKeyAndValue() {
   r = db.Get("k");
   CHECK(r.status == KVStatus::kGetFound && r.value.empty());
 }
+
+void TestDel() {
+  LockingBackend db;
+  CHECK(db.Del("missing").status == KVStatus::kDelNotFound);
+
+  db.Set("k", "v");
+  CHECK(db.Del("k").status == KVStatus::kDelOk);
+  CHECK(db.Get("k").status == KVStatus::kGetNotFound);
+  CHECK(db.Del("k").status == KVStatus::kDelNotFound);
+}
