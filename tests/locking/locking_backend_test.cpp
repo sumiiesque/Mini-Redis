@@ -27,3 +27,14 @@ void TestSetGetOverwrite() {
   r = db.Get("k");
   CHECK(r.status == KVStatus::kGetFound && r.value == "v2");
 }
+
+void TestEmptyKeyAndValue() {
+  LockingBackend db;
+  CHECK(db.Set("", "v").status == KVStatus::kSetOk);
+  auto r = db.Get("");
+  CHECK(r.status == KVStatus::kGetFound && r.value == "v");
+
+  CHECK(db.Set("k", "").status == KVStatus::kSetOk);
+  r = db.Get("k");
+  CHECK(r.status == KVStatus::kGetFound && r.value.empty());
+}
