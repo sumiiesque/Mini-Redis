@@ -50,4 +50,4 @@ class LockingBackend : public KVBackend {
   std::vector<std::unique_ptr<Stripe>> stripes_;
 };
 
-}
+}  // namespace backends

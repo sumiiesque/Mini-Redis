@@ -89,4 +89,4 @@ KVResult LockingBackend::Expire(const std::string& key, int64_t ttl_ms) {
   return KVResult::Status(KVStatus::kExpireOk);
 }
 
-}
+}  // namespace backends
