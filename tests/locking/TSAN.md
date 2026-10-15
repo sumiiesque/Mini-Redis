@@ -25,3 +25,5 @@ All three tests (`kv_backend_test`, `locking_backend_test`, `locking_concurrency
 - `TestConcurrentDifferentStripes` — 8 threads writing/reading disjoint keys concurrently.
 - `TestExpireRacingWithGetSet` — dedicated EXPIRE, SET, and GET threads racing on one key for 200ms continuously.
 - `TestRandomizedStress` — 8 threads x 5,000 randomized SET/GET/DEL/EXPIRE operations over a 64-key keyspace.
+
+No code changes were required as a result of this verification pass — the striped read/write locking design was race-free on the first TSan run.
