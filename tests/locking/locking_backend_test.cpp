@@ -48,3 +48,11 @@ void TestDel() {
   CHECK(db.Get("k").status == KVStatus::kGetNotFound);
   CHECK(db.Del("k").status == KVStatus::kDelNotFound);
 }
+
+void TestRepeatedOperations() {
+  LockingBackend db;
+  for (int i = 0; i < 10; ++i) CHECK(db.Set("k", "v").status == KVStatus::kSetOk);
+  CHECK(db.Get("k").value == "v");
+  CHECK(db.Del("k").status == KVStatus::kDelOk);
+  for (int i = 0; i < 3; ++i) CHECK(db.Del("k").status == KVStatus::kDelNotFound);
+}
