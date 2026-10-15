@@ -80,3 +80,38 @@ void TestConcurrentDifferentStripes() {
   }
   CHECK(all_found);
 }
+
+void TestExpireRacingWithGetSet() {
+  LockingBackend db;
+  db.Set("racer", "initial");
+  std::atomic<bool> stop{false};
+  std::atomic<int> crashes{0};
+
+  std::thread expirer([&] {
+    while (!stop.load()) {
+      db.Expire("racer", 1);
+      std::this_thread::sleep_for(std::chrono::microseconds(50));
+    }
+  });
+  std::thread setter([&] {
+    while (!stop.load()) {
+      db.Set("racer", "updated");
+    }
+  });
+  std::thread getter([&] {
+    while (!stop.load()) {
+      KVResult r = db.Get("racer");
+      if (r.status == KVStatus::kGetFound && r.value != "initial" && r.value != "updated") {
+        crashes.fetch_add(1);
+      }
+    }
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  stop.store(true);
+  expirer.join();
+  setter.join();
+  getter.join();
+
+  CHECK(crashes.load() == 0);
+}
