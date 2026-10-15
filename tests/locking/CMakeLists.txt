@@ -1,0 +1,7 @@
+add_executable(locking_backend_test locking_backend_test.cpp)
+target_link_libraries(locking_backend_test PRIVATE locking_backend)
+add_test(NAME locking_backend_test COMMAND locking_backend_test)
+
+add_executable(locking_concurrency_test concurrency_test.cpp)
+target_link_libraries(locking_concurrency_test PRIVATE locking_backend)
+add_test(NAME locking_concurrency_test COMMAND locking_concurrency_test)
