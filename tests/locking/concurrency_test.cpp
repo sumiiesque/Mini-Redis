@@ -26,3 +26,30 @@ bool IsUniform(const std::string& v) {
   }
   return true;
 }
+
+void TestConcurrentSetGetDelSameKey() {
+  LockingBackend db;
+  constexpr int kThreads = 8;
+  constexpr int kOpsPerThread = 2000;
+  std::atomic<bool> saw_corruption{false};
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < kThreads; ++t) {
+    threads.emplace_back([&, t] {
+      char c = static_cast<char>('a' + t);
+      std::string val = MakeValue(c, 32);
+      for (int i = 0; i < kOpsPerThread; ++i) {
+        db.Set("shared", val);
+        KVResult r = db.Get("shared");
+        if (r.status == KVStatus::kGetFound && !IsUniform(r.value)) {
+          saw_corruption.store(true);
+        }
+        if (i % 7 == 0) db.Del("shared");
+        if (i % 11 == 0) db.Expire("shared", 10000);
+      }
+    });
+  }
+  for (auto& th : threads) th.join();
+
+  CHECK(!saw_corruption.load());
+}
