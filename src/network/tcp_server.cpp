@@ -7,12 +7,20 @@
 #include<sys/socket.h>
 #include<fcntl.h>
 #include<sys/event.h>
+#include "../protocol/resp_parser.h"
+#include "../protocol/resp_encoder.h"
+#include "../common/command.h"
+#include "../common/response.h"
+#include <unordered_map>
+#include <string>
+#include <cerrno>
 
 using namespace std;
 
-tcpserver::tcpserver(int port){
+tcpserver::tcpserver(int port,CommandRouter* router){
     this->port=port;
     this->server_fd=-1;
+    this->router=router;
 }
 
 tcpserver::~tcpserver(){
@@ -65,6 +73,9 @@ void tcpserver::start(){
         return;
     }
 
+    std::unordered_map<int, std::string> input_buffers;
+    RESPParser parser;
+    RESPEncoder encoder;
     struct kevent events[10];
 
     while (true) {
@@ -84,6 +95,7 @@ void tcpserver::start(){
                 continue;
             }
             cout << "client connected!\n";
+            input_buffers[client_fd] = "";
 
             int flags = fcntl(client_fd, F_GETFL, 0);
             fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
@@ -96,26 +108,89 @@ void tcpserver::start(){
             }
         }
 
-        else if (events[i].filter == EVFILT_READ) {
-            char msg[1024];
-            int received = recv(fd,msg,sizeof(msg) - 1,0);
 
-            if (received > 0) {
-                msg[received] = '\0';
-                cout << "Received: " << msg << endl;
+    else if (events[i].filter == EVFILT_READ) {
+        char msg[4096];
+        int received = recv(fd, msg, sizeof(msg), 0);
+
+        if (received > 0) {
+            input_buffers[fd].append(msg, received);
+
+            std::string& pending = input_buffers[fd];
+            size_t consumed_total = 0;
+
+            while (consumed_total < pending.size()) {
+                Command command;
+                size_t consumed = 0;
+
+                try {
+                std::string request = pending.substr(consumed_total);
+
+                    if (!parser.parse(request, command, consumed)) {
+                        break;  //Wait
+                    }
+
+                    if (consumed == 0) break;
+
+                    Response response = router->execute(command);
+                    std::string encoded = encoder.encode(response);
+
+                    size_t sent_total = 0;
+
+                    while (sent_total < encoded.size()) {
+                        ssize_t sent = send(
+                            fd,
+                            encoded.data() + sent_total,
+                            encoded.size() - sent_total,
+                            0
+                        );
+
+                        if (sent > 0) {
+                            sent_total += static_cast<size_t>(sent);
+                        } else if (sent == -1 && errno == EINTR) {
+                         continue;
+                        } else {
+                         break;
+                        }
+                    }
+
+                    if (sent_total < encoded.size()) {
+                        std::cerr << "Response write incomplete\n";
+                        close(fd);
+                        input_buffers.erase(fd);
+                        break;
+                    }
+
+                    consumed_total += consumed;
+                } catch (const std::exception& ex) {
+                    std::string error = encoder.encode(
+                        Response::error(std::string("ERR ") + ex.what())
+                    );
+
+                    (void)send(fd, error.data(), error.size(), 0);
+                    close(fd);
+                    input_buffers.erase(fd);
+                    break;
+                }
             }
 
-            else if (received == 0) {
+            auto it = input_buffers.find(fd);
+
+            if (it != input_buffers.end() && consumed_total > 0) {
+                it->second.erase(0, consumed_total);
+            }
+            } else if (received == 0) {
                 cout << "client disconnected\n";
                 close(fd);
-            }
-
-            else {
-                cerr << "recv failed\n";
-                close(fd);
-            }
+                input_buffers.erase(fd);
+            } else if (errno != EAGAIN && errno != EWOULDBLOCK &&
+                errno != EINTR) {
+            cerr << "recv failed\n";
+            close(fd);
+            input_buffers.erase(fd);
         }
     }
-}
+
+}}
 
 }
