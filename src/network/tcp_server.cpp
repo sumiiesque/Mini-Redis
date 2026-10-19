@@ -6,6 +6,7 @@
 #include<arpa/inet.h>
 #include<sys/socket.h>
 #include<fcntl.h>
+#include <unordered_set>
 #include<sys/event.h>
 #include "../protocol/resp_parser.h"
 #include "../protocol/resp_encoder.h"
@@ -74,9 +75,94 @@ void tcpserver::start(){
     }
 
     std::unordered_map<int, std::string> input_buffers;
+    std::unordered_map<int, std::string> output_buffers;
+    std::unordered_set<int> write_enabled;
+    std::unordered_set<int> close_after_write;
     RESPParser parser;
     RESPEncoder encoder;
     struct kevent events[10];
+
+    auto close_client = [&](int client_fd) {
+    EV_SET(&eve, client_fd, EVFILT_READ, EV_DELETE, 0, 0, nullptr);
+    kevent(kqueue_fd, &eve, 1, nullptr, 0, nullptr);
+
+    EV_SET(&eve, client_fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
+    kevent(kqueue_fd, &eve, 1, nullptr, 0, nullptr);
+
+    close(client_fd);
+    input_buffers.erase(client_fd);
+    output_buffers.erase(client_fd);
+    write_enabled.erase(client_fd);
+    close_after_write.erase(client_fd);
+};
+
+    auto queue_response = [&](int client_fd, const std::string& response) {
+        output_buffers[client_fd] += response;
+
+        if (write_enabled.insert(client_fd).second) {
+            EV_SET(&eve, client_fd, EVFILT_WRITE, EV_ADD, 0, 0, nullptr);
+
+            if (kevent(kqueue_fd, &eve, 1, nullptr, 0, nullptr) == -1) {
+                close_client(client_fd);
+                return false;
+            }
+        }
+
+        return true;
+    };
+
+    auto flush_output = [&](int client_fd) {
+        auto it = output_buffers.find(client_fd);
+
+        if (it == output_buffers.end()) {
+            return true;
+        }
+
+        std::string& pending = it->second;
+        size_t sent_total = 0;
+
+        while (sent_total < pending.size()) {
+            ssize_t sent = send(
+                client_fd,
+                pending.data() + sent_total,
+                pending.size() - sent_total,
+                0
+            );
+
+            if (sent > 0) {
+                sent_total += static_cast<size_t>(sent);
+            } else if (sent == -1 && errno == EINTR) {
+                continue;
+            } else if (sent == -1 &&
+                    (errno == EAGAIN || errno == EWOULDBLOCK)) {
+                break;
+            } else {
+                close_client(client_fd);
+                return false;
+        }
+        }
+
+        pending.erase(0, sent_total);
+
+        if (pending.empty()) {
+        output_buffers.erase(client_fd);
+        write_enabled.erase(client_fd);
+
+        EV_SET(&eve, client_fd, EVFILT_WRITE, EV_DELETE, 0, 0, nullptr);
+
+        if (kevent(kqueue_fd, &eve, 1, nullptr, 0, nullptr) == -1 &&
+            errno != ENOENT) {
+            close_client(client_fd);
+            return false;
+        }
+
+        if (close_after_write.count(client_fd)) {
+            close_client(client_fd);
+            return false;
+        }
+    }
+    return true;
+    };
 
     while (true) {
         int count = kevent(kqueue_fd,nullptr,0,events,10,nullptr);
@@ -104,9 +190,10 @@ void tcpserver::start(){
 
             if (kevent(kqueue_fd, &eve, 1, nullptr, 0, nullptr) == -1) {
                 cerr << "failed to add client to kqueue\n";
-                close(client_fd);
+                close_client(client_fd);
+                continue;
+                }
             }
-        }
 
 
     else if (events[i].filter == EVFILT_READ) {
@@ -135,42 +222,21 @@ void tcpserver::start(){
                     Response response = router->execute(command);
                     std::string encoded = encoder.encode(response);
 
-                    size_t sent_total = 0;
-
-                    while (sent_total < encoded.size()) {
-                        ssize_t sent = send(
-                            fd,
-                            encoded.data() + sent_total,
-                            encoded.size() - sent_total,
-                            0
-                        );
-
-                        if (sent > 0) {
-                            sent_total += static_cast<size_t>(sent);
-                        } else if (sent == -1 && errno == EINTR) {
-                         continue;
-                        } else {
-                         break;
-                        }
-                    }
-
-                    if (sent_total < encoded.size()) {
-                        std::cerr << "Response write incomplete\n";
-                        close(fd);
-                        input_buffers.erase(fd);
+                    if (!queue_response(fd, encoded)) {
                         break;
                     }
-
+                    if (!flush_output(fd)) {
+                        break;
+                    }
                     consumed_total += consumed;
-                } catch (const std::exception& ex) {
+                }
+                catch (const std::exception& ex) {
                     std::string error = encoder.encode(
                         Response::error(std::string("ERR ") + ex.what())
                     );
-
-                    (void)send(fd, error.data(), error.size(), 0);
-                    close(fd);
-                    input_buffers.erase(fd);
-                    break;
+                    if (queue_response(fd, error)) {
+                        close_after_write.insert(fd);
+                    } break;
                 }
             }
 
@@ -180,17 +246,20 @@ void tcpserver::start(){
                 it->second.erase(0, consumed_total);
             }
             } else if (received == 0) {
-                cout << "client disconnected\n";
-                close(fd);
-                input_buffers.erase(fd);
+                close_client(fd);
+                continue;
             } else if (errno != EAGAIN && errno != EWOULDBLOCK &&
-                errno != EINTR) {
+           errno != EINTR) {
             cerr << "recv failed\n";
-            close(fd);
-            input_buffers.erase(fd);
+            close_client(fd);
+            continue;
+            }
         }
+
+    else if (events[i].filter == EVFILT_WRITE) {
+    if (!flush_output(fd)) {
+        continue;
     }
-
-}}
-
 }
+
+   }}}
