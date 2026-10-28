@@ -1,0 +1,162 @@
+#include "backends/locking_backend.h"
+
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <random>
+#include <string>
+#include <thread>
+#include <vector>
+
+namespace {
+int g_failures = 0;
+int g_checks = 0;
+}
+
+#define CHECK(cond)                                                                    do {                                                                                   ++g_checks;                                                                          if (!(cond)) {                                                                         ++g_failures;                                                                        std::fprintf(stderr, "CHECK FAILED: %s (%s:%d)\n", #cond, __FILE__, __LINE__);     }                                                                                  } while (0)
+
+using backends::LockingBackend;
+
+std::string MakeValue(char c, size_t len) { return std::string(len, c); }
+
+bool IsUniform(const std::string& v) {
+  if (v.empty()) return true;
+  for (char c : v) {
+    if (c != v[0]) return false;
+  }
+  return true;
+}
+
+void TestConcurrentSetGetDelSameKey() {
+  LockingBackend db;
+  constexpr int kThreads = 8;
+  constexpr int kOpsPerThread = 2000;
+  std::atomic<bool> saw_corruption{false};
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < kThreads; ++t) {
+    threads.emplace_back([&, t] {
+      char c = static_cast<char>('a' + t);
+      std::string val = MakeValue(c, 32);
+      for (int i = 0; i < kOpsPerThread; ++i) {
+        db.Set("shared", val);
+        KVResult r = db.Get("shared");
+        if (r.status == KVStatus::kGetFound && !IsUniform(r.value)) {
+          saw_corruption.store(true);
+        }
+        if (i % 7 == 0) db.Del("shared");
+        if (i % 11 == 0) db.Expire("shared", 10000);
+      }
+    });
+  }
+  for (auto& th : threads) th.join();
+
+  CHECK(!saw_corruption.load());
+}
+
+void TestConcurrentDifferentStripes() {
+  LockingBackend db;
+  constexpr int kThreads = 8;
+  constexpr int kKeysPerThread = 500;
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < kThreads; ++t) {
+    threads.emplace_back([&, t] {
+      for (int i = 0; i < kKeysPerThread; ++i) {
+        std::string key = "t" + std::to_string(t) + "-k" + std::to_string(i);
+        db.Set(key, key);
+      }
+    });
+  }
+  for (auto& th : threads) th.join();
+
+  bool all_found = true;
+  for (int t = 0; t < kThreads; ++t) {
+    for (int i = 0; i < kKeysPerThread; ++i) {
+      std::string key = "t" + std::to_string(t) + "-k" + std::to_string(i);
+      KVResult r = db.Get(key);
+      if (r.status != KVStatus::kGetFound || r.value != key) all_found = false;
+    }
+  }
+  CHECK(all_found);
+}
+
+void TestExpireRacingWithGetSet() {
+  LockingBackend db;
+  db.Set("racer", "initial");
+  std::atomic<bool> stop{false};
+  std::atomic<int> crashes{0};
+
+  std::thread expirer([&] {
+    while (!stop.load()) {
+      db.Expire("racer", 1);
+      std::this_thread::sleep_for(std::chrono::microseconds(50));
+    }
+  });
+  std::thread setter([&] {
+    while (!stop.load()) {
+      db.Set("racer", "updated");
+    }
+  });
+  std::thread getter([&] {
+    while (!stop.load()) {
+      KVResult r = db.Get("racer");
+      if (r.status == KVStatus::kGetFound && r.value != "initial" && r.value != "updated") {
+        crashes.fetch_add(1);
+      }
+    }
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  stop.store(true);
+  expirer.join();
+  setter.join();
+  getter.join();
+
+  CHECK(crashes.load() == 0);
+}
+
+void TestRandomizedStress() {
+  LockingBackend db;
+  constexpr int kThreads = 8;
+  constexpr int kOpsPerThread = 5000;
+  constexpr int kKeyspace = 64;
+
+  std::vector<std::thread> threads;
+  for (int t = 0; t < kThreads; ++t) {
+    threads.emplace_back([&, t] {
+      std::mt19937 rng(static_cast<unsigned>(t) * 7919u + 1);
+      std::uniform_int_distribution<int> key_dist(0, kKeyspace - 1);
+      std::uniform_int_distribution<int> op_dist(0, 3);
+      for (int i = 0; i < kOpsPerThread; ++i) {
+        std::string key = "rand-" + std::to_string(key_dist(rng));
+        switch (op_dist(rng)) {
+          case 0:
+            db.Set(key, "v");
+            break;
+          case 1:
+            db.Get(key);
+            break;
+          case 2:
+            db.Del(key);
+            break;
+          default:
+            db.Expire(key, 5);
+            break;
+        }
+      }
+    });
+  }
+  for (auto& th : threads) th.join();
+  CHECK(true);
+}
+
+int main() {
+  TestConcurrentSetGetDelSameKey();
+  TestConcurrentDifferentStripes();
+  TestExpireRacingWithGetSet();
+  TestRandomizedStress();
+
+  std::printf("%d/%d checks passed\n", g_checks - g_failures, g_checks);
+  return g_failures == 0 ? 0 : 1;
+}
