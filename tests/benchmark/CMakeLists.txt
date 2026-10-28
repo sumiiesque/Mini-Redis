@@ -1,0 +1,23 @@
+add_executable(benchmark_config_test config_test.cpp)
+target_link_libraries(benchmark_config_test PRIVATE benchmark_lib)
+add_test(NAME benchmark_config_test COMMAND benchmark_config_test)
+
+add_executable(benchmark_zipfian_test zipfian_test.cpp)
+target_link_libraries(benchmark_zipfian_test PRIVATE benchmark_lib)
+add_test(NAME benchmark_zipfian_test COMMAND benchmark_zipfian_test)
+
+add_executable(benchmark_metrics_test metrics_test.cpp)
+target_link_libraries(benchmark_metrics_test PRIVATE benchmark_lib)
+add_test(NAME benchmark_metrics_test COMMAND benchmark_metrics_test)
+
+add_executable(benchmark_result_test result_test.cpp)
+target_link_libraries(benchmark_result_test PRIVATE benchmark_lib)
+add_test(NAME benchmark_result_test COMMAND benchmark_result_test)
+
+add_executable(benchmark_sweep_test sweep_test.cpp)
+target_link_libraries(benchmark_sweep_test PRIVATE benchmark_lib)
+add_test(NAME benchmark_sweep_test COMMAND benchmark_sweep_test)
+
+add_executable(benchmark_end_to_end_test end_to_end_test.cpp)
+target_link_libraries(benchmark_end_to_end_test PRIVATE benchmark_lib)
+add_test(NAME benchmark_end_to_end_test COMMAND benchmark_end_to_end_test)
