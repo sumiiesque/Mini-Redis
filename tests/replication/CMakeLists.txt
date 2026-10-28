@@ -1,0 +1,7 @@
+add_executable(replication_test replication_test.cpp)
+target_link_libraries(replication_test PRIVATE replication locking_backend)
+add_test(NAME replication_test COMMAND replication_test)
+
+add_executable(replication_end_to_end_test end_to_end_test.cpp)
+target_link_libraries(replication_end_to_end_test PRIVATE replication network locking_backend)
+add_test(NAME replication_end_to_end_test COMMAND replication_end_to_end_test)
