@@ -1,0 +1,7 @@
+add_executable(mutation_record_test mutation_record_test.cpp)
+target_link_libraries(mutation_record_test PRIVATE persistence)
+add_test(NAME mutation_record_test COMMAND mutation_record_test)
+
+add_executable(aof_test aof_test.cpp)
+target_link_libraries(aof_test PRIVATE persistence locking_backend)
+add_test(NAME aof_test COMMAND aof_test)
